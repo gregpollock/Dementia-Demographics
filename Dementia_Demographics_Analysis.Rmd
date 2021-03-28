@@ -1,0 +1,195 @@
+---
+title: "Dementia Patient Demographics Analysis"
+author: "Greg Pollock"
+date: "11/16/2020"
+
+abstract: "Dementia is a growing problem among older adults. Clinical Dementia Rating (CDR) is a metric for measuring a person’s impaired mental capabilities. In this analysis, a logistic regression analysis of patients over 60 was performed that found age, gender and college attendance to affect CDR at the $\alpha=0.05$ level. On average, males were 1.9 times more likely to have any dementia, and college attendees were about half as likely to have any dementia. In addition, as an individual’s age increased by one, they were on average 2.5 times as likely to have any dementia."
+
+output: 
+  word_document:
+    toc: true
+  fig_captions: yes
+
+---
+
+```{r echo=FALSE, message=FALSE}
+library(tidyverse)
+library(car)
+require(gridExtra)
+
+data <- read_csv("oasis_cross-sectional.csv")
+
+df <- tibble(
+  clin_dem_rat = data$CDR,
+  age = data$Age,
+  gender = data$`M/F`,
+  education = data$Educ
+)
+df <- df[df$age >= 60,]
+
+college <- c()
+response <- c()
+
+for (i in 1:nrow(df)) {
+    if (df$clin_dem_rat[i] != 0) {response[i] = 1}
+      else {response[i] = 0}
+  
+    if (df$education[i] <= 2) {college[i] = "No"}
+      else {college[i] = "Yes"}  
+}
+
+df <- cbind(response, df, college)
+```
+
+
+
+
+# 1. Introduction
+Dementia is the general term for a person’s chronic impaired ability to remember, think or make decisions when doing everyday tasks and is not a normal part of aging. There were an estimated 5 million U.S. adults with dementia in 2014, and this is projected to grow to 14 million by 2060 according to the Centers for Disease Control and Prevention. Clinical Dementia Rating (CDR) is a test performed by medical professionals consisting of simple interview questions meant to target a patient’s mental faculties. It has been shown to be effective in measuring an individual’s level of dementia (Rockwood, K. et al.).  
+
+A question worth asking is which patient demographics correlate with having dementia. In this analysis I utilized a generalized linear model to determine what effects - if any - age, gender and college attendance had on having a non-zero CDR (having at least mild dementia). Specifically, a logistic regression using the Logit link function was done to measure these effects on the odds of having a non-zero CDR. The details of this method are included later on in the report. In this analysis, an alpha level of $\alpha=0.05$ was used.  
+
+
+
+
+# 2. Exploratory Data Analysis
+Data from the OASIS Project was used. This project’s purpose is to provide MRI imaging data from both demented and nondemented patients to the scientific community for study and prediction of Alzheimer’s Disease (OASIS Brains).  
+The specific dataset used was from a cross-sectional study comparing older-aged individuals to younger-aged individuals. The demographics as well as measurements and scores from a variety of tests are included. Only patients over 60 were included for the analysis in this report because all individuals over 60 had been given a clinical dementia rating which provided the researcher a metric for dementia. Clinical Dementia Rating, age, gender, and education level for each individual is included in the data. The education level variable is an ordinal variable ranging from one to five according to the following key: 1: less than high school graduate, 2: high school graduate, 3: some college, 4: college graduate, 5: beyond college (Marcus et. al.).  
+
+
+## 2.1 Data Visualization
+The following plot shows the quantity of individuals in each CDR level. It can be seen that almost half of the individuals in the dataset have no CDR and the rest have a nonzero CDR. As expected, having no dementia is common and severe dementia uncommon.  
+
+  
+```{r, fig.align='center', echo=FALSE, fig.width=4 * 1.61803, fig.height=4}
+ggplot(data = df) +
+  geom_bar(aes(x = clin_dem_rat), color = "blue", fill = "blue", width = 0.005) + 
+  geom_point(x = 0, y = nrow(df[df$clin_dem_rat == 0,]), color = "blue") +
+  geom_point(x = 0.5, y = nrow(df[df$clin_dem_rat == 0.5,]), color = "blue") +
+  geom_point(x = 1, y = nrow(df[df$clin_dem_rat == 1,]), color = "blue") +
+  geom_point(x = 2, y = nrow(df[df$clin_dem_rat == 2,]), color = "blue") +
+  ggtitle("2.1.1\nClinical Dementia Ratings Across Sampled Patients") +
+  xlab("Clinical Dementia Rating (CDR)") +
+  ylab("Count") + 
+  theme_bw()
+```
+
+This data is also not balanced across the three explanatory variables. Some variable combinations are less represented, and this could lead to bias the eventual analysis. Below is a  scatterplot that splits the points into a grid across the ‘education’ and ‘gender’ variables and then colors the points according to ‘age.’  
+```{r echo=FALSE, message=FALSE, fig.height=6, fig.width=7}
+set.seed(11112011)
+
+ggplot(data = df, aes(x = college, y = gender, color = age)) +
+  geom_jitter(width = .3, height = .3) +
+  scale_color_gradientn(colors = rainbow(5)) +
+  xlab("Attended College") +
+  ylab("gender") +
+  ggtitle("2.1.2\nObservations Grouped By College Attendance") +
+  theme_bw()
+  
+
+```
+  words???  
+```{r, echo=FALSE}
+summary(df)
+```
+
+
+
+
+```{r echo=FALSE}
+college <- c()
+for (i in 1:nrow(df)) {
+    if (df$education[i] <= 2) {college[i] = 0}
+      else {college[i] = 1}  
+}
+
+df$response <- as.factor(df$response)
+df$gender <- as.factor(df$gender) 
+df$education <- as.factor(df$education)
+df$college <- as.factor(df$college)
+```
+
+# 3. Methodology
+Having observed the structure of the data, a generalized linear fit was performed. In this case the binary outcome is the presence of a non-zero Clinical Dementia Rating. The Logit function transforms the explanatory variables (‘age,’ ‘gender,’ and ‘college’) in order to relate the response variable (CDR) to $log(\frac{\pi_i}{1-\pi_i})$ where $\pi_i$ is the probability of a positive outcome. This allows for the interpretation of coefficients as influencing the log-odds of the response. It is also possible to exponentiate the coefficients to interpret how the variables affect the odds of having a non-zero CDR. The research question can also be structured in statistical terms to test for any non-zero relationship between each explanatory variable and the response. Specifically, for each explanatory variable's coefficient $\beta_i$, the following hypothesis tests are relevant:  
+$H_0: \beta_i = 0$ (null hypothesis)
+$H_A: \beta_i \ne 0$ (Alternative Hypothesis)  
+This data model came with several assumptions that needed to be met; independent, non-correlated explanatory variables needed to have a linear relationship with the logit of the binary response variable (Zach, B.). 
+
+# 4. Results
+```{r, echo=FALSE, include=FALSE}
+model_init <- glm(response ~ (age + college + gender)^2, data = df, family = binomial(link = "logit"))
+model_final <- glm(response ~ age + I(age^2) + gender + college, data = df, family = binomial(link = "logit"))
+vif(model_final)
+```
+The first model explored included all three variables with two-way interactions.
+
+```{r, echo=FALSE}
+summary(model_init)[12]
+```
+
+
+These saturated models also used the education level variable. Not much of the variation was explained by the variables in the models, so different setups were explored. As shown previously, the education levels were grouped by whether or not the individual attended any college. This helped the effect of higher education surface. Also, by plotting each variable’s residuals, age was observed to have a squared relationship with the Logit of the response.  
+The following two plots show the residuals before and after a square transformation of the Age variable. Once transformed, the assumption of a linear relationship between the variables and the Logit of the response can be met for all variables. 
+
+```{r, echo=FALSE, fig.width=5 * 1.618, fig.height=5, message=FALSE}
+
+p1 <- ggplot(data = df, aes(x = age, y = predict(model_init))) +
+  geom_point() + 
+  geom_smooth(method = "loess") +
+  ylim(c(-9,9)) +
+  xlab("Age") +
+  ylab("Predicted Value") +
+  ggtitle("4.0.2\nPredicted Values for\n Patient Age Unadjusted") +
+  theme_bw()
+
+p2 <- ggplot(data = df, aes(x = age, y = predict(model_final))) +
+  geom_point() + 
+  geom_smooth(method = "loess") +
+  ylim(c(-9,9)) +
+  xlab("Age") +
+  ylab("Predicted Value") +
+  ggtitle("\nPredicted Values for\n Patient Age Squared") +
+  theme_bw()
+
+grid.arrange(p1, p2, ncol=2)
+```
+ 
+To satisfy the assumption of non-correlated explanatory variables, variance inflation factors were calculated to measure the severity of multicollinearity (correlation) in the model. This test revealed  that there was no multicollinearity, so the assumption of non-correlated explanatory variables is met.  
+
+## 4.1 Final Model
+
+After experimenting and exploring several models, the following model was selected: $log(\frac{p_i}{1-p_i}) = \beta_0 + \beta_1 Age + \beta_2Age^2 + \beta_3gender + \beta_4College$  
+  where $p_i = Prob(Response_i = 1 | Age, Age^2, gender, College)$.  
+
+Table 4.1.1 shows that this model is sufficiently describing the data.
+```{r, echo=FALSE}
+anova(model_final)
+```
+
+  
+The coefficients shown in Table 4.1.2 are also evidence of the effectiveness of this model as all p-values are less than our established $\alpha$-level of $\alpha=0.05$.
+```{r echo=FALSE}
+summary(model_final)[12]
+```
+words?  
+
+
+# 5. Conclusion   
+From the final model's coefficients, it is possible to determine the increase or decrease in odds of having a non-zero Clinical Dementia Rating. Notably, holding all else constant, as an individual's age increases by 1 year, the odds of having a non-zero CDR increase by $e^{0.93} - e^{0.01}=1.5$ on average meaning they are 1.5 times more likely to have a non-zero CDR. In addition, holding all else constant, on average, males over 60 years old are $e^{0.64}=1.9$ times more likely to have a non-zero CDR when compared to similar females. Lastly, holding all else constant, for individuals over 60 years, those who attended college were $e^{-0.71}=0.49$ times as likely to have a non-zero CDR meaning that on average, those who attended college were roughly half as likely to have a non-zero CDR.  
+
+
+The final model was successful in answering the question of what patient demographics correlated with having some sort of Clinical Dementia Rating. I would have liked to have more data in general, but specifically for individuals with higher CDR to increase the power of this analysis. To improve the analysis, I would better familiarize myself with the data collection method of the OASIS Project to ensure that this data source is reliable and that the results are correct.  
+To extend the scope of analysis I would also like to include other valid measures of dementia such as Normalized Whole Brain Volume as was preliminarily explored (Whitwell, J., et al.). Further research could be done using the MR images themselves along with classification machine learning models to predict Dementia and even Alzheimer’s Disease.
+
+  
+# 7. Appendix
+```{r ref.label= knitr::all_labels(), echo = TRUE, eval=FALSE}
+```
+
+# 8. Dataset
+```{r echo=FALSE}
+knitr::kable(df, col.names = c("Response", "CDR", "Age", "gender", "Education Level", "College"))
+```
+
+
+
